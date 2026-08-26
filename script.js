@@ -1,0 +1,324 @@
+const width = 800;   // το Πλάτος του καμβά. 
+const height = 400;  // το Ύψος του καμβά.
+const padding = 60;  // το περιθώριο γύρω από το γράφημα για τους άξονες.
+
+// Set για αποθήκευση των μοναδικών σεναρίων που έχει δοκιμάσει ο χρήστης.
+const testedScenarios = new Set();
+
+let currentClimateState = ""; // Αποθηκεύει την πρόβλεψη (π.χ. "Ερημοποίηση").
+let animFrameId = null;       // ID για τον έλεγχο του animation των αριθμών.
+let hasCompleted = false;     // Σημαία ολοκλήρωσης της δραστηριότητας (στο 100%).
+
+// 0. ΣΧΕΔΙΑΣΗ ΑΞΟΝΩΝ & ΠΛΕΓΜΑΤΟΣ SVG.
+//Σχεδιάζει το υπόβαθρο του γραφήματος: οριζόντιες γραμμές, άξονες Υ (θερμοκρασία αριστερά, υγρασία δεξιά) και τα κενά paths.
+
+function drawAxesOnly() {
+    const svg = document.getElementById('customSvgChart');
+    if (!svg) return;
+
+    // Διατήρηση των εσωτερικών CSS styles του SVG
+    const styleTag = svg.querySelector('style');
+    svg.innerHTML = '';
+    if (styleTag) svg.appendChild(styleTag);
+
+    let gridLines = '';
+
+    // Δημιουργία 5 οριζόντιων γραμμών πλέγματος και ετικετών αξόνων
+    for (let i = 0; i <= 5; i++) {
+        let y = padding + (i * (height - 2 * padding) / 5);
+        // Οριζόντια βοηθητική γραμμή
+        gridLines += `<line x1="${padding}" y1="${y}" x2="${width - padding}" y2="${y}" stroke="#f1f5f9" stroke-width="1" />`;
+
+        // Αριστερός άξονας: Θερμοκρασία (14°C έως 21°C)
+        let tempLabel = (21 - (i * (21 - 14) / 5)).toFixed(1);
+        gridLines += `<text x="${padding - 10}" y="${y + 4}" font-size="12" fill="#e74c3c" text-anchor="end">${tempLabel}°C</text>`;
+
+        // Δεξιός άξονας: Υγρασία (30% έως 75%)
+        let humLabel = Math.round(75 - (i * (75 - 30) / 5));
+        gridLines += `<text x="${width - padding + 10}" y="${y + 4}" font-size="12" fill="#3498db" text-anchor="start">${humLabel}%</text>`;
+    }
+
+    // Σχεδίαση κατακόρυφων και οριζόντιων γραμμών πλαισίου
+    gridLines += `<line x1="${padding}" y1="${padding}" x2="${padding}" y2="${height - padding}" stroke="#94a3b8" stroke-width="2" />`;
+    gridLines += `<line x1="${width - padding}" y1="${padding}" x2="${width - padding}" y2="${height - padding}" stroke="#94a3b8" stroke-width="2" />`;
+    gridLines += `<line x1="${padding}" y1="${height - padding}" x2="${width - padding}" y2="${height - padding}" stroke="#94a3b8" stroke-width="2" />`;
+
+    // Αρχικοποίηση των κενών μονοπατιών (paths) για τις 2 γραμμές
+    gridLines += `<path id="tempPath" class="animated-line" fill="none" stroke="#e74c3c" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" d="" />`;
+    gridLines += `<path id="humPath" class="animated-line" fill="none" stroke="#3498db" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" d="" />`;
+
+    svg.innerHTML += gridLines;
+}
+
+// 1. Ενημέρωση για την ΠΡΟΟΔΟ του χρήστη.
+//Υπολογίζει και ενημερώνει το ποσοστό ολοκλήρωσης της δραστηριότητας. Κάθε νέο σενάριο που δοκιμάζεται προσθέτει 25%.
+
+function updateScore(scenario) {
+    testedScenarios.add(scenario); // Προσθήκη σεναρίου στο Set (αγνοεί διπλότυπα).
+    const currentScore = testedScenarios.size * 25; // 4 σενάρια * 25 = 100%
+
+    // Ενημέρωση του στοιχείου scoreText στην οθόνη.
+    const scoreTextEl = document.getElementById('scoreText');
+    if (scoreTextEl) {
+        scoreTextEl.textContent = currentScore;
+    }
+
+    // Αν συμπληρωθεί το 100% για πρώτη φορά, εμφάνιση σχετκού μηνύματος.
+    if (currentScore === 100 && !hasCompleted) {
+        hasCompleted = true;
+        setTimeout(() => {
+            alert('Ολοκληρώσατε την δραστηριότητα στο 100%.\n Μπορείτε να συνεχίσετε τις προσομοιώσεις...\n ή να κλείσετε το παράθυρο.');
+        }, 5000);
+    }
+}
+
+// 2. ΠΡΟΣΟΜΟΙΩΣΗ και ΥΠΟΛΟΓΙΣΜΟΙ.
+// Συλλέγει τις εισόδους, υπολογίζει τις τιμές θερμοκρασίας/υγρασίας ανά 5ετία.
+
+function runSimulationData() {
+    // Ανάκτηση τιμών από τις εισόδους του χρήστη
+    const scenario = document.getElementById('scenarioSelect').value;
+    const targetYear = parseInt(document.getElementById('yearSlider').value);
+
+    // Ενημέρωση του σκορ προόδου (κλήση της συνάρτησης #1).
+    updateScore(scenario);
+
+    // Αρχικές τιμές με βάση το έτος 2000)
+    const baseYear = 2000;
+    const baseTemp = 15.5;
+    const baseHumidity = 65;
+    let timeline = []; // Ο πίνακας που θα αποθηκευτούν όλα τα δεδομένα.
+
+    // Υπολογισμός τιμών ανά 5 έτη μέχρι το έτος-στόχο
+    for (let year = baseYear; year <= targetYear; year += 5) {
+        const yearsPassed = year - baseYear;
+        let temp = baseTemp;
+        let humidity = baseHumidity;
+
+        // Μαθηματικά μοντέλα ανάλογα με το επιλεγμένο σενάριο.
+        if (scenario === 'A2') {
+            temp += yearsPassed * 0.045;
+            humidity -= yearsPassed * 0.15;
+        } else if (scenario === 'B2') {
+            temp += yearsPassed * 0.022;
+            humidity -= yearsPassed * 0.05;
+        } else if (scenario === 'A1B') {
+            temp += yearsPassed * 0.035;
+            humidity -= yearsPassed * 0.10;
+        } else if (scenario === 'RegCM_A1B') {
+            temp += yearsPassed * 0.039;
+            humidity -= yearsPassed * 0.14;
+        }
+
+        // Αποθήκευση των δεδομένων της περιόδου.
+        timeline.push({
+            year: year,
+            temp: parseFloat(temp.toFixed(2)),
+            humidity: Math.max(10, Math.round(humidity)) // Μέριμνα για ελάχιστο όριο υγρασίας 10%
+        });
+    }
+
+    // Πληροφορίες αρχικής και τελικής κατάστασης
+    const finalInfo = timeline[timeline.length - 1];
+    const startInfo = timeline[0];
+
+    // Αξιολόγηση τελικής κλιματικής κατάστασης με βάση την θερμοκρασία.
+   currentClimateState = "Σταθερό Κλίμα";
+	if (finalInfo.temp > 18.5) {
+    currentClimateState = "Έντονη Ερημοποίηση & Συχνοί Καύσωνες";
+		} else if (finalInfo.temp > 17.0) {
+    currentClimateState = "Αύξηση Ακραίων Καιρικών Φαινομένων (Medicane)";
+		} else if (finalInfo.temp > 16.0) {
+    currentClimateState = "Ήπια Κλιματική Μεταβολή";
+	}
+
+    // Δημιουργία των HTML στοιχείων για τις animated τιμές
+    const instructions = document.getElementById('instructions');
+    if (instructions) {
+        instructions.style.display = 'block';
+        instructions.innerHTML = 
+            `Μέση Ετήσια Θερμοκρασία: <span style="color:#e74c3c; font-weight:bold;">` +
+            `<span id="animTemp">${startInfo.temp.toFixed(2)}</span>°C (` +
+            `<span id="animTempDiff">+0.00</span>°C)</span> | ` +
+            `Μέση Ετήσια Υγρασία: <span style="color:#3498db; font-weight:bold;">` +
+            `<span id="animHum">${startInfo.humidity}</span>% (` +
+            `<span id="animHumDiff">0</span>%)</span>` +
+            `<div id="prediction"></div>`;
+    }
+   
+    setTimeout(() => {
+	    // έναρξη σχεδίασης του γραφήματος(#5).
+        drawChartData(timeline);
+		// έναρξη σχεδίασης του animation των τιμών(#4).
+        animateResultValues(startInfo.temp, finalInfo.temp, startInfo.humidity, finalInfo.humidity, 4000);
+    }, 200);
+}
+
+// 3. Αnimation ΣΧΕΔΙΑΣΗΣ γραμμών.
+// Χρησιμοποιεί την τεχνική stroke-dashoffset για να σχεδιάσει ομαλά τη γραμμή από τα αριστερά προς τα δεξιά.
+
+function animatePathDrawing(pathElement) {
+    if (!pathElement) return;
+    pathElement.style.transition = 'none';
+    const length = pathElement.getTotalLength(); // Υπολογισμός συνολικού μήκους γραμμής
+    
+    // Κρύψιμο γραμμής πίσω από τις παύλες
+    pathElement.style.strokeDasharray = length + ' ' + length;
+    pathElement.style.strokeDashoffset = length;
+    pathElement.getBoundingClientRect(); // Trigger reflow
+    
+    // Ενεργοποίηση CSS transition για εμφάνιση
+    pathElement.style.transition = 'stroke-dashoffset 4.0s ease-out';
+    pathElement.style.strokeDashoffset = '0';
+}
+
+
+// 4. Animation ΑΥΞΗΣΗΣ/ΜΕΙΩΣΗΣ των τιμών θερμοκρασίας, υγρασίας.
+// Οι τελικές τιμές και η πρόβλεψη έχουν ήδη υπολογιστεί απο την runSimulationData(). 
+// Η ακόλουθη συνάρτηση υπολογίζει μόνο τις ενδιάμεσες τιμές που θα εμφανίζει σταδιακά μέχρι τις τελικές τιμές.
+
+function animateResultValues(startTemp, endTemp, startHum, endHum, duration) {
+
+    const tempEl = document.getElementById('animTemp');
+    const humEl = document.getElementById('animHum');
+    const tempDiffEl = document.getElementById('animTempDiff');
+    const humDiffEl = document.getElementById('animHumDiff');
+
+    if (!tempEl || !humEl || !tempDiffEl || !humDiffEl) return;
+
+    if (animFrameId) cancelAnimationFrame(animFrameId); // Ακύρωση προηγούμενου animation αν τρέχει
+
+    const startTime = performance.now();
+	
+	// Βρόχος ενημέρωσης καρέ-καρέ (frame by frame).
+    function update(now) {
+        const elapsed = now - startTime;
+        // Ποσοστό ολοκλήρωσης του Animation, από 0 έως 1.
+        const progress = Math.min(elapsed / duration, 1);
+        // Υπολογισμός τρέχουσας θερμοκρασίας.
+        const currentTemp =
+            startTemp + (endTemp - startTemp) * progress;
+        // Υπολογισμός τρέχουσας υγρασίας.
+        const currentHum =
+            startHum + (endHum - startHum) * progress;
+        // Διαφορά από τις αρχικές τιμές.
+        const diffTemp = currentTemp - startTemp;
+        const diffHum = currentHum - startHum;
+        // Ενημέρωση της HTML με τις νέες τιμές.
+        tempEl.textContent = currentTemp.toFixed(2);
+        humEl.textContent = Math.round(currentHum);
+        tempDiffEl.textContent = (diffTemp >= 0 ? '+' : '') + diffTemp.toFixed(2);
+        humDiffEl.textContent = (diffHum >= 0 ? '+' : '') + Math.round(diffHum);
+        // Αν δεν έχει τελειώσει το animation, συνέχισε με το επόμενο frame.
+        if (progress < 1) { animFrameId = requestAnimationFrame(update);} 		
+		else { // Το animation ολοκληρώθηκε. Εμφάνισε την πρόβλεψης.
+            const prediction =
+                document.getElementById('prediction');
+            if (prediction) {
+                prediction.style.opacity = '1';
+                prediction.innerHTML =`<span style="font-weight:bold;">${currentClimateState}</span>`;
+            }
+        }
+    }
+	
+    animFrameId = requestAnimationFrame(update); //κάλεσε τη συνάρτηση update
+}
+
+// 5. ΜΕΤΑΤΡΟΠΗ ΔΕΔΟΜΕΝΩΝ ΣΕ ΓΡΑΦΗΜΑ SVG.
+// Μετατρέπει τις τιμές της timeline σε συντεταγμένες Pixels X,Y και δημιουργεί τα SVG Path commands (M, L)
+
+function drawChartData(timeline) {
+    const svg = document.getElementById('customSvgChart');
+    if (!svg || !timeline || timeline.length === 0) return;
+
+    // Καθαρισμός προηγούμενων ετικετών άξονα Χ
+    svg.querySelectorAll('.x-axis-label, .x-axis-tick').forEach(el => el.remove());
+
+    const totalPoints = timeline.length;
+    const xStep = totalPoints > 1 ? (width - 2 * padding) / (totalPoints - 1) : (width - 2 * padding);
+
+    let tempD = ""; // SVG Path string για θερμοκρασία
+    let humD = "";  // SVG Path string για υγρασία
+
+    timeline.forEach((item, index) => {
+        // Υπολογισμός θέσης X & Y βάσει κλίμακας pixel
+        let x = padding + (index * xStep);
+        let yTemp = height - padding - ((item.temp - 14) / (21 - 14)) * (height - 2 * padding);
+        let yHum = height - padding - ((item.humidity - 30) / (75 - 30)) * (height - 2 * padding);
+
+        // Σύνταξη των εντολών σχεδίασης (M = MoveTo, L = LineTo)
+        if (index === 0) {
+            tempD += `M ${x},${yTemp} `;
+            humD += `M ${x},${yHum} `;
+        } else {
+            tempD += `L ${x},${yTemp} `;
+            humD += `L ${x},${yHum} `;
+        }
+
+        // Προσθήκη ετικετών ετών στον άξονα X (ανά 20 έτη ή στα άκρα)
+        if (item.year % 20 === 0 || index === totalPoints - 1 || index === 0) {
+            svg.innerHTML += `<text x="${x}" y="${height - padding + 20}" font-size="12" fill="#64748b" text-anchor="middle" class="x-axis-label">${item.year}</text>`;
+            svg.innerHTML += `<line x1="${x}" y1="${height - padding}" x2="${x}" y2="${height - padding + 5}" stroke="#cbd5e1" class="x-axis-tick" />`;
+        }
+    });
+
+    // Ενημέρωση των μονοπατιών στο SVG και έναρξη του animation.
+    const tempPath = document.getElementById('tempPath');
+    const humPath = document.getElementById('humPath');
+
+    if (tempPath && humPath) {
+        tempPath.setAttribute('d', tempD);
+        humPath.setAttribute('d', humD);
+		//Αnimation ΣΧΕΔΙΑΣΗ #3 της γραμμής της ΘΕΡΜΟΚΡΑΣΙΑΣ.
+        animatePathDrawing(tempPath);
+		//Αnimation ΣΧΕΔΙΑΣΗ #3 της γραμμής της ΥΓΡΑΣΙΑΣ.
+        animatePathDrawing(humPath);
+    }
+}
+
+
+// 6. RESET ΓΡΑΦΗΜΑΤΟΣ.
+// Καθαρίζει το γράφημα και ακυρώνει τρέχοντα animations πριν ξεκινήσει μια νέα προσομοίωση.
+
+function resetChartAndResults() {
+    if (animFrameId) cancelAnimationFrame(animFrameId); // Σταμάτημα τρέχοντος animation αριθμών
+
+    const tempPath = document.getElementById('tempPath');
+    const humPath = document.getElementById('humPath');
+
+    if (tempPath) tempPath.setAttribute('d', '');
+    if (humPath) humPath.setAttribute('d', '');
+
+    const svg = document.getElementById('customSvgChart');
+    if (svg) {
+        svg.querySelectorAll('.x-axis-label, .x-axis-tick').forEach(el => el.remove());
+    }
+
+    const instructions = document.getElementById('instructions');
+    if (instructions) {
+        instructions.style.display = 'block';
+        instructions.innerHTML = `Επιλέξτε ένα κλιματικό σενάριο, επιλέξτε το Έτος Πρόβλεψης και πατήστε "Προσομοίωση".`;
+    }
+
+    currentClimateState = "";
+}
+
+// MAIN(). EVENT LISTENERS.
+
+window.addEventListener('DOMContentLoaded', () => {
+    // κάνε Σχεδίαση των αξόνων του γραφήματος
+    drawAxesOnly();
+    // κάνε RESET ΓΡΑΦΗΜΑΤΟΣ #6 και τρέξε την προσομοίωση #2 όταν πατηθεί το κουμπί "Προσομοίωση"
+    const btn = document.getElementById('runBtn');
+    if (btn) {
+        btn.addEventListener('click', () => {
+            resetChartAndResults();
+            runSimulationData();
+        });
+    }
+    // κάνε RESET ΓΡΑΦΗΜΑΤΟΣ #6 όταν αλλάξει το σενάριο ή μετακινηθεί ο slider
+    const scenarioSelect = document.getElementById('scenarioSelect');
+    if (scenarioSelect) scenarioSelect.addEventListener('change', resetChartAndResults);
+    const yearSlider = document.getElementById('yearSlider');
+    if (yearSlider) yearSlider.addEventListener('input', resetChartAndResults);
+});
