@@ -1,0 +1,128 @@
+ body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f4f7f6;
+            color: #333;
+            margin: 20px;
+        }
+
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+        }
+
+        h2 {
+            color: #2a6caf;
+            text-align: center;
+            padding: 0px;
+            margin: 0px;
+        }
+
+        .controls-panel {
+            padding: 15px 0;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 15px;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+
+        label {
+            font-weight: bold;
+            color: #495057;
+        }
+
+        select,
+        input[type="range"] {
+            padding: 10px;
+            border-radius: 6px;
+            border: 1px solid #ced4da;
+            font-size: 15px;
+            background: #FFFFc5;
+        }
+
+        input[type="range"] {
+            cursor: pointer;
+            width: 200px;
+        }
+
+        .year-display {
+            font-weight: bold;
+            color: #27ae60;
+            font-size: 16px;
+        }
+
+        button {
+            background-color: #3498db;
+            color: white;
+            cursor: pointer;
+            border: none;
+            font-weight: bold;
+            padding: 12px 24px;
+            border-radius: 6px;
+            font-size: 16px;
+            transition: background 0.3s ease;
+            align-self: flex-end;
+        }
+
+        button:hover {
+            background-color: #2980b9;
+        }
+
+        .legend-container {
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+            margin-top: 15px;
+            margin-bottom: 0;
+            font-weight: bold;
+            font-size: 14px;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .box-temp {
+            width: 15px;
+            height: 15px;
+            background: #e74c3c;
+            border-radius: 3px;
+        }
+
+        .box-hum {
+            width: 15px;
+            height: 15px;
+            background: #3498db;
+            border-radius: 3px;
+        }
+
+        .chart-container {
+            width: 100%;
+            display: flex;
+            justify-content: center;
+        }
+
+        #instructions {
+            font-size: 15px;
+            color: rgb(100, 116, 139);
+            text-align: center;
+            min-height: 52px;
+            display: block;
+            margin: 10px 0;
+        }
+
+        #prediction {
+            margin-top: 10px;
+            font-weight: bold;
+            color: #c0392b;
+            opacity: 0;
+            transition: opacity 0.5s ease;
+        }
